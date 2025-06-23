@@ -91,6 +91,11 @@ def _map_battery_status_to_percentage(status: str) -> int | None:
 
 def status_polling_thread():
     """Un hilo que pide el estado de la alarma periódicamente y lo publica en MQTT."""
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Declaramos la variable como global AL PRINCIPIO de la función.
+    global is_alarm_authenticated
+    # --- FIN DE LA CORRECCIÓN ---
+
     logging.info(f"Iniciando hilo de sondeo de estado cada {POLLING_INTERVAL_MINUTES} minutos.")
     while not shutdown_event.is_set():
         if not is_alarm_authenticated:
@@ -118,7 +123,7 @@ def status_polling_thread():
             logging.info("Estado de la central publicado a MQTT.")
 
         except (CommunicationError, AuthError) as e:
-            global is_alarm_authenticated
+            # Ahora que ya está declarada como global, aquí solo la usamos.
             logging.warning(f"Error durante el sondeo de estado: {e}. Se marcará como no autenticado.")
             is_alarm_authenticated = False
         
