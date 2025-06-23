@@ -2,8 +2,6 @@ ARG BUILD_FROM=ghcr.io/hassio-addons/base:17.2.5
 FROM ${BUILD_FROM}
 ENV LANG C.UTF-8
 
-# Instalar paquetes necesarios Y LAS DEPENDENCIAS QUE FALTAN
-# Instalar paquetes necesarios, INCLUYENDO las herramientas de compilación
 RUN apk add --no-cache \
     bash \
     git \
@@ -16,9 +14,16 @@ RUN apk add --no-cache \
     libstdc++ \
     openssl \
     build-base \
-    python3-dev
+    python3-dev \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    openssl-dev
 
-# Instalar dependencias de Python con pip
+# Actualizar pip a la última versión
+RUN pip3 install --upgrade pip
+
+# Instalar paho-mqtt
 RUN pip3 install --no-cache-dir paho-mqtt
 
 # Instalar bashio
