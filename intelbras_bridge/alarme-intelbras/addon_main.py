@@ -118,7 +118,17 @@ def process_receptorip_output(proc):
     for line in iter(proc.stdout.readline, ''):
         line = line.strip()
         if not line: continue
-        logging.info(f"Evento de la Central (receptorip): {line}")
+        #logging.info(f"Evento de la Central (receptorip): {line}")
+        # --- INICIO DE LA MEJORA ---
+        # Intentamos separar la fecha/hora del resto del mensaje
+        parts = line.split()
+        message_content = line
+        if len(parts) > 2 and "T" not in parts[0] and ":" in parts[1]:
+            # Asumimos que es un log con formato "YYYY-MM-DD HH:MM:SS Mensaje..."
+            message_content = " ".join(parts[2:])
+
+        logging.info(f"Evento de la Central (receptorip): {message_content}")
+        # --- FIN DE LA MEJORA ---
         if "Ativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
         elif "Desativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
         elif line.startswith("Panico"):
