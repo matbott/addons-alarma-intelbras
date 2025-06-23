@@ -1,5 +1,5 @@
 name: "Panel Alarm Intelbras Hub - MQTT"
-version: "0.1.3"
+version: "0.1.4"
 slug: "intelbras_bridge"
 description: "Full-featured bridge for Intelbras alarm panels (AMT-8000 and similar) via MQTT."
 url: "https://github.com/matbott/addons-intelbras"
