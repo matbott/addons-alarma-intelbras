@@ -1,7 +1,8 @@
 #!/usr/bin/with-contenv bashio
 
 # --- FUNCIONES Y TRAPS (TRAMPAS) ---
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
+#log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
+log() { echo "[$1]"; }
 cleanup() {
     log "Encerrando... Deteniendo procesos en segundo plano."
     pkill -P $$
