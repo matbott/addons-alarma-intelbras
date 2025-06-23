@@ -29,7 +29,8 @@ COMMAND_TOPIC = "intelbras/alarm/command"
 
 # --- Instancias Globales ---
 alarm_client = AlarmClient(host=ALARM_IP, port=ALARM_PORT)
-mqtt_client = mqtt.Client()
+#mqtt_client = mqtt.Client()
+mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 is_alarm_authenticated = False
 
 # --- Funciones de MQTT ---
