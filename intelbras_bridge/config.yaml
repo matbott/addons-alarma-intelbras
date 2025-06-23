@@ -1,5 +1,5 @@
 name: "Intelbras MQTT Bridge"
-version: "3.0.6"
+version: "0.0.1"
 slug: "intelbras_bridge"
 description: "Full-featured bridge for Intelbras alarm panels (AMT-8000 and similar) via MQTT."
 url: "https://github.com/matbott/addons-intelbras"
@@ -9,7 +9,7 @@ arch:
   - armhf
   - armv7
   - i386
-icon: "icon.png"
+#icon: "icon.png"
 hassio_api: true
 homeassistant_api: true
 startup: "application"
