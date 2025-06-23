@@ -376,7 +376,7 @@ class Client:
         LOGGER.debug("Sending disarm command: %s", payload.hex())
         return_data = self._send_command_and_receive_response(payload)
         
-        if len(return_data) > 9 and return_data[9] == 0x91:
+        if len(return_data) > 9 and return_data[9] == 0x90:
             LOGGER.info("System disarmed successfully.")
             return 'disarmed'
             
