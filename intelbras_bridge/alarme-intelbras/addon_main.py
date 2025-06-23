@@ -1,4 +1,4 @@
-# Archivo: addon_main.py (v2.6 - con Lock para evitar race conditions)
+# Archivo: addon_main.py (v2.8 - Log de Zonas Recortado)
 import os
 import sys
 import logging
@@ -25,6 +25,8 @@ MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883))
 MQTT_USER = os.environ.get('MQTT_USER')
 MQTT_PASS = os.environ.get('MQTT_PASS')
 POLLING_INTERVAL_MINUTES = int(os.environ.get('polling_interval_minutes', 5))
+# --- LEEMOS LA NUEVA VARIABLE DE ENTORNO ---
+ZONE_COUNT = int(os.environ.get('ZONE_COUNT', 8)) # 8 por defecto
 AVAILABILITY_TOPIC = "intelbras/alarm/availability"
 COMMAND_TOPIC = "intelbras/alarm/command"
 BASE_TOPIC = "intelbras/alarm"
@@ -50,7 +52,6 @@ def on_message(client, userdata, msg):
     command = msg.payload.decode()
     logging.info(f"Comando MQTT recibido: '{command}'")
 
-    # --- INICIO: DEBUG DEL LOCK ---
     logging.info("[on_message] -> Intentando tomar el candado...")
     with alarm_lock:
         logging.info("[on_message] -> Candado ADQUIRIDO.")
@@ -70,7 +71,6 @@ def on_message(client, userdata, msg):
         except (CommunicationError, AuthError) as e:
             logging.error(f"Error de comunicación durante comando: {e}")
     logging.info("[on_message] -> Trabajo terminado. Candado LIBERADO.")
-    # --- FIN: DEBUG DEL LOCK ---
 
 
 # --- Funciones de la Alarma ---
@@ -91,7 +91,6 @@ def status_polling_thread():
     """Un hilo que pide el estado de la alarma periódicamente."""
     logging.info(f"Iniciando hilo de sondeo cada {POLLING_INTERVAL_MINUTES} minutos.")
     while not shutdown_event.is_set():
-        # --- INICIO: DEBUG DEL LOCK ---
         logging.info("[Polling] -> Intentando tomar el candado...")
         with alarm_lock:
             logging.info("[Polling] -> Candado ADQUIRIDO.")
@@ -103,8 +102,21 @@ def status_polling_thread():
                     logging.info("Sondeando estado de la central...")
                     status = alarm_client.status()
                     
+                    # --- INICIO DEL CAMBIO ---
+                    # Comprobamos si el diccionario de zonas existe y no está vacío.
                     if 'zones' in status and status['zones']:
-                        logging.info(f"Estado de Zonas detectado: {status['zones']}")
+                        full_zone_list = status['zones']
+                        
+                        # Creamos un nuevo diccionario más pequeño.
+                        zones_to_log = {
+                            str(k): full_zone_list.get(str(k), 'unknown') 
+                            for k in range(1, ZONE_COUNT + 1)
+                        }
+                        
+                        logging.info(f"Estado de Zonas (1-{ZONE_COUNT}): {zones_to_log}")
+                    else:
+                        logging.warning("No se encontró información de zonas en la respuesta de estado.")
+                    # --- FIN DEL CAMBIO ---
 
                     # Publicar cada valor a su topic correspondiente
                     mqtt_client.publish(f"{BASE_TOPIC}/model", status.get("model"), retain=True)
@@ -120,7 +132,6 @@ def status_polling_thread():
                     logging.warning(f"Error durante el sondeo de estado: {e}.")
         
         logging.info("[Polling] -> Trabajo terminado. Candado LIBERADO.")
-        # --- FIN: DEBUG DEL LOCK ---
 
         # Esperar para el siguiente sondeo fuera del lock
         shutdown_event.wait(POLLING_INTERVAL_MINUTES * 60)
