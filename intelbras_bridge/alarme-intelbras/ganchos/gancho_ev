@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# Gancho para códigos de eventos. Os números são passados como parâmetros
+# de linha de comando:
+#
+# $1: código do evento
+# $2: partição
+# $3: zona
+# $4: qualificador
+#
+# Consulte a documentação da Intelbras e/ou o início do arquivo alarmeitbl/tratador.py
+# para conhecer os possíveis códigos de eventos, e em que eventos o qualificador
+# deve ser observado, bem como seu significado. Exemplos:
+#
+# Evento 130 (disparo): qualificador 1 (abertura/disparo) ou 3 (restauro/desligamento).
+# Evento 404 (ativação remota): qualif. 3 (ativação) ou 1 (desativação do alarme).
+# Evento 625 (data/hora atualizada): nenhum qualificador
+
+echo "$1 $2 $3 $4" >> gancho_ev.txt
+
+# Exemplo de possível integração básica com MQTT
+
+if [ "$1" -eq 401 ] || [ "$1" -eq 403 ] || [ "$1" -eq 404 ] || [ "$1" -eq 407 ]; then
+       TOPICO="stat/AlarmeCasa5432/Estado"
+       MSG="$4"
+
+       if [ "$4" -eq 3 ]; then
+               MSG="Ativado"
+       elif [ "$4" -eq 1 ]; then
+               MSG="Desativado"
+       fi
+
+        timelimit -t 60 -T 65 mosquitto_pub -h 127.0.0.1 -t "$TOPICO" -m "$MSG"
+fi

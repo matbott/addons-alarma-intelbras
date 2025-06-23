@@ -1,0 +1,48 @@
+[receptorip]
+
+; Scripts de gancho
+
+gancho_arquivo = ./ganchos/gancho_arquivo
+gancho_central = ./ganchos/gancho_central
+gancho_ev = ./ganchos/gancho_ev
+gancho_msg = ./ganchos/gancho_msg
+gancho_watchdog = ./ganchos/gancho_watchdog
+
+; interface de rede e porta do Receptor IP
+; use addr 0.0.0.0 se não precisar direcionar a uma interface
+
+; addr = 0.0.0.0
+addr = 192.168.1.113
+port = 9009
+
+; Centrais cuja conexão aceitaremos - expressão regular
+; ID da central é no formato aa:bb:cc, minúsculo
+
+centrais = .*
+
+; Número máximo de centrais conectadas e autenticadas simultâneas
+
+; maxconn = 999
+maxconn = 1
+
+; endereço e porta da central de alarme
+; caddr pode ser 'auto' ou um endereço explícito
+; usados apenas para download de fotos de sensor IVP-8000 Pet Cam
+
+;caddr = auto
+caddr = 192.168.1.7
+cport = 9009
+
+; senha de acesso remoto (usuário 98) e tamanho em digitos (4 ou 6)
+; usados apenas para download de fotos de sensor IVP-8000 Pet Cam
+
+senha = 781152
+tamanho = 6
+
+; local de gravação dos arquivos de foto obtidos do IVP-8000 Pet Cam
+
+folder_dlfoto = .
+
+; arquivo de log. Informar "None" para desligar
+
+logfile = receptorip.log

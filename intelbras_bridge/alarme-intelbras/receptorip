@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+
+import sys, os, configparser, re
+
+# --- LÍNEAS DE IMPORTACIÓN CORREGIDAS ---
+# 'Timeout' y 'Log' vienen de 'myeventloop'
+from alarmeitbl.myeventloop import Timeout, Log
+# El resto de las clases principales vienen de 'tratador'
+from alarmeitbl.tratador import Tratador, TCPServerEventLoop, TCPListener, Handler
+from alarmeitbl.tratador_fotos import TratadorDeFotos
+
+def usage():
+    print("Modo de usar: %s <arquivo de configuração>" % sys.argv[0])
+    sys.exit(1)
+
+def parse_config():
+    if len(sys.argv) < 2:
+        usage()
+
+    cfgfile = configparser.ConfigParser()
+    cfgfile.read(sys.argv[1])
+    if 'receptorip' not in cfgfile:
+        usage()
+    return cfgfile['receptorip']
+
+# --- Carga de Configuración ---
+config = parse_config()
+host = config.get('addr', '').lower().strip()
+port = config.getint('port')
+caddr = config.get('caddr', '').lower().strip()
+cport = config.getint('cport')
+senha = config.getint('senha')
+tam_senha = config.getint('tamanho')
+centrais = re.compile(config.get('centrais', '.*')) # Acepta cualquier central si no se especifica
+maxconn = config.getint('maxconn')
+# Uso de .get() para que el logfile sea opcional, con un valor por defecto
+logfile = config.get("logfile", "receptorip.log")
+folder_dlfoto = config.get('folder_dlfoto', '.') # Carpeta actual si no se especifica
+
+# --- Configuración del Log ---
+Log.set_level(Log.INFO)
+if logfile.lower() != "none":
+    Log.set_file(logfile)
+
+Log.info(f"Iniciando receptor IP en {host}:{port}")
+
+# --- Watchdog (sin ganchos externos) ---
+def watchdog(to_obj):
+    Log.info("Receptor en funcionamiento (watchdog)")
+    to_obj.reset(3600)
+
+Timeout.new("watchdog", 15, watchdog)
+
+# --- Configuración del TratadorDeFotos (sin ganchos) ---
+# Se pasa ":" como primer argumento ya que no se usará el gancho de archivo
+Tratador.tratador_de_fotos = TratadorDeFotos(":", folder_dlfoto, caddr, cport, senha, tam_senha)
+
+# --- Funciones de Validación ---
+def valida_central(id_central):
+    # La validación sigue siendo la misma, pero el logeo es más limpio
+    return centrais.match(id_central)
+
+def centrais_conectadas():
+    n = 0
+    for h in Handler.items.values():
+        if isinstance(h, Tratador) and h.central_identificada:
+            n += 1
+    return n
+
+def valida_maxconn():
+    return centrais_conectadas() < maxconn
+
+# --- Asignación de funciones y ganchos ---
+Tratador.valida_central = valida_central
+Tratador.valida_maxconn = valida_maxconn
+
+# SOLUCIÓN: Asignar el comando "no-op" a todos los ganchos para desactivarlos de forma segura
+Tratador.gancho_arquivo = ":"
+Tratador.gancho_central = ":"
+Tratador.gancho_ev = ":"
+Tratador.gancho_msg = ":"
+Tratador.gancho_watchdog = ":"
+
+# --- Monitoreo de Conexión (sin ganchos externos) ---
+def central_nao_conectada(to_obj):
+    if not centrais_conectadas():
+        if central_nao_conectada.alarme <= 0:
+            central_nao_conectada.alarme = 1
+            # En lugar de llamar a un script, solo se registra en el log
+            Log.info("ALERTA: Ninguna central conectada.")
+    else:
+        if central_nao_conectada.alarme > 0:
+            central_nao_conectada.alarme = 0
+            # Se registra la reconexión
+            Log.info("INFO: Central(es) conectada(s) nuevamente.")
+    
+    to_obj.restart()
+
+central_nao_conectada.alarme = 0
+Timeout.new("central_nc", 3600, central_nao_conectada)
+
+# --- Bucle Principal del Servidor ---
+Log.info(f"Creando servidor TCP en {host}:{port}")
+try:
+    ev = TCPServerEventLoop((host, port), TCPListener, Tratador)
+    Log.info("Servidor TCP creado. Aguardando conexoes...")
+    ev.loop()
+
+except KeyboardInterrupt:
+    Log.info("Interrumpido pelo usuario.")
+    print("\nServidor detenido por el usuario.")
+except Exception as e:
+    Log.error(f"Error fatal en el loop principal: {e}")
+    print(f"Error fatal: {e}")
+    sys.exit(1)
