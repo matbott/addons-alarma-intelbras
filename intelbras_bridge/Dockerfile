@@ -13,9 +13,12 @@ RUN apk add --no-cache \
     curl \
     ca-certificates \
     libstdc++ \
-    openssl
-    
-RUN pip3 install paho-mqtt
+    openssl \
+    build-base \
+    python3-dev
+
+# Instalar dependencias de Python con pip
+RUN pip3 install --no-cache-dir paho-mqtt
 
 # Instalar bashio
 RUN mkdir -p /usr/lib/bashio && \
