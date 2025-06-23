@@ -1,7 +1,7 @@
 configuration:
   alarm_ip:
     name: "Dirección IP de la Central"
-    description: "La dirección IP de tu central de alarma Intelbras en la red local (ej: 192.168.1.50)."
+    description: "La dirección IP de tu central de alarma Intelbras en la red local, debe ser ip fija (ej: 192.168.1.50)."
   alarm_port:
     name: "Puerto de la Central"
     description: "El puerto de comunicación de la central de alarma (normalmente 9009)."
@@ -17,9 +17,3 @@ configuration:
   zone_count:
     name: "Número de Zonas"
     description: "El número total de sensores de zona que se crearán en Home Assistant."
-  zone_names:
-    name: "Nombres de las Zonas (Opcional)"
-    description: "Una lista de nombres personalizados para tus zonas. El primer nombre corresponde a la Zona 1, el segundo a la Zona 2, y así sucesivamente."
-  zone_types:
-    name: "Tipos de Zona (Opcional)"
-    description: "Una lista de tipos de dispositivo (ej: door, window, motion) para cada zona. Esto cambia el ícono en Home Assistant."
