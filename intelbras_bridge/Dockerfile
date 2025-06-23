@@ -3,6 +3,7 @@ FROM ${BUILD_FROM}
 ENV LANG C.UTF-8
 
 # Instalar paquetes necesarios Y LAS DEPENDENCIAS QUE FALTAN
+# Instalar paquetes necesarios, INCLUYENDO las herramientas de compilación
 RUN apk add --no-cache \
     bash \
     git \
