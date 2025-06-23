@@ -78,15 +78,18 @@ def connect_and_auth_alarm():
 # --- NUEVA FUNCIÓN DE SONDEO Y LOGGING ---
 def status_polling_thread():
     """Un hilo que pide el estado de la alarma periódicamente y lo muestra en el log."""
-    global is_alarm_authenticated
     logging.info(f"Iniciando hilo de sondeo de estado cada {POLLING_INTERVAL_MINUTES} minutos.")
     
     while not shutdown_event.is_set():
-        if not is_alarm_authenticated:
-            if not connect_and_auth_alarm():
-                logging.warning("Sondeo de estado omitido, no se pudo autenticar. Reintentando en 60s.")
-                shutdown_event.wait(60) # Esperar 60 segundos antes de reintentar si falla la conexión
-                continue
+        # --- INICIO DE LA CORRECCIÓN ---
+        # En lugar de comprobar una variable, llamamos a connect_and_auth_alarm()
+        # al inicio de CADA ciclo para asegurar una sesión fresca.
+        logging.info("Refrescando sesión para el sondeo periódico...")
+        if not connect_and_auth_alarm():
+            logging.warning("Sondeo de estado omitido, no se pudo autenticar. Reintentando en 60s.")
+            shutdown_event.wait(60) # Esperar 60 segundos antes de reintentar si falla
+            continue
+        # --- FIN DE LA CORRECCIÓN ---
         
         try:
             logging.info("Sondeando estado de la central para el log...")
