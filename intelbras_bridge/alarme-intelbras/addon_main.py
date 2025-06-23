@@ -115,26 +115,29 @@ def status_polling_thread():
 
 # El resto del archivo (process_receptorip_output, handle_shutdown, if __name__ == "__main__") se mantiene igual
 def process_receptorip_output(proc):
+    """Lee la salida de 'receptorip', la loguea y publica eventos a MQTT."""
     for line in iter(proc.stdout.readline, ''):
         line = line.strip()
         if not line: continue
-        #logging.info(f"Evento de la Central (receptorip): {line}")
-        # --- INICIO DE LA MEJORA ---
-        # Intentamos separar la fecha/hora del resto del mensaje
-        parts = line.split()
-        message_content = line
-        if len(parts) > 2 and "T" not in parts[0] and ":" in parts[1]:
-            # Asumimos que es un log con formato "YYYY-MM-DD HH:MM:SS Mensaje..."
-            message_content = " ".join(parts[2:])
+        
+        # Mostramos la línea original y completa para máxima claridad y robustez.
+        logging.info(f"Evento de la Central (receptorip): {line}")
 
-        logging.info(f"Evento de la Central (receptorip): {message_content}")
-        # --- FIN DE LA MEJORA ---
-        if "Ativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
-        elif "Desativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
-        elif line.startswith("Panico"):
+        # Comprobamos los eventos en la línea original.
+        # La comprobación de pánico está aquí, como la primera condición.
+        if "Panico" in line:
+            # --- LAS LÍNEAS QUE MENCIONAS ESTÁN AQUÍ, NO SE HAN QUITADO ---
             logging.info(f"¡Evento de pánico detectado: {line}!")
             mqtt_client.publish(f"{BASE_TOPIC}/panic", "on", retain=False)
+            # Creamos un hilo para que después de 30s lo vuelva a 'off'
             threading.Timer(30.0, lambda: mqtt_client.publish(f"{BASE_TOPIC}/panic", "off", retain=False)).start()
+            # --- FIN DE LAS LÍNEAS IMPORTANTES ---
+
+        elif "Ativacao remota app" in line: 
+            mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
+        elif "Desativacao remota app" in line: 
+            mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
+            
     logging.warning("Proceso 'receptorip' terminado.")
 
 def handle_shutdown(signum, frame):
