@@ -17,9 +17,3 @@ configuration:
   zone_count:
     name: "Number of Zones"
     description: "The total number of zone sensors to create in Home Assistant."
-  zone_names:
-    name: "Zone Names (Optional)"
-    description: "A list of custom names for your zones. The first name corresponds to Zone 1, the second to Zone 2, and so on."
-  zone_types:
-    name: "Zone Types (Optional)"
-    description: "A list of device types (e.g., door, window, motion) for each zone. This changes the icon in Home Assistant."
