@@ -51,13 +51,14 @@ def on_message(client, userdata, msg):
     command = msg.payload.decode()
     logging.info(f"Comando MQTT recibido en topic '{msg.topic}': '{command}'")
 
-    global is_alarm_authenticated
-    if not is_alarm_authenticated:
-        logging.warning("Se recibió un comando pero la alarma no está autenticada. Intentando autenticar ahora.")
-        if not connect_and_auth_alarm():
-            logging.error("No se pudo ejecutar el comando porque la autenticación con la alarma falló.")
-            return
-
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Para solucionar el problema de la sesión expirada, llamamos a connect_and_auth_alarm()
+    # CADA VEZ que llega un comando, para asegurar una sesión "fresca".
+    logging.info("Refrescando sesión con la central antes de enviar el comando...")
+    if not connect_and_auth_alarm():
+        logging.error("No se pudo ejecutar el comando porque la re-autenticación con la alarma falló.")
+        return
+    # --- FIN DE LA CORRECCIÓN ---
     try:
         if command == "ARM_AWAY":
             logging.info("Enviando comando para ARMAR sistema...")
