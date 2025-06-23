@@ -144,7 +144,7 @@ def build_status(data: bytearray) -> Dict[str, Any]:
     expected_payload_length = merge_octets(data[4:6])
 
     if len(data) < 8 + expected_payload_length:
-        LOGGER.warning("Received data is shorter than indicated length. Expected: %d, Received: %d. Data: %s",
+        LOGGER.debug("Received data is shorter than indicated length. Expected: %d, Received: %d. Data: %s",
                         8 + expected_payload_length, len(data), data.hex())
         payload = data[8:]
     else:
