@@ -14,6 +14,8 @@ RUN apk add --no-cache \
     ca-certificates \
     libstdc++ \
     openssl
+    
+RUN pip3 install paho-mqtt
 
 # Instalar bashio
 RUN mkdir -p /usr/lib/bashio && \
