@@ -168,6 +168,7 @@ listen_for_commands() {
         # Usamos 'case' para asegurarnos de que solo se ejecuten comandos conocidos.
         case "$command" in
             "ARM_AWAY"|"DISARM")
+                log "Verificando contraseña. Longitud: ${#ALARM_PASS}, Primer carácter: ${ALARM_PASS:0:1}"
                 log "Ejecutando script de Python para el comando '$command'..."
                 # Llamamos a nuestro nuevo script de Python pasándole los argumentos necesarios.
                 # Asegúrate de que python3 esté disponible en tu addon.
