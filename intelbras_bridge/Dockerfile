@@ -2,6 +2,7 @@ ARG BUILD_FROM=ghcr.io/hassio-addons/base:17.2.5
 FROM ${BUILD_FROM}
 ENV LANG C.UTF-8
 
+# Instalar paquetes necesarios, INCLUYENDO las herramientas de compilación
 RUN apk add --no-cache \
     bash \
     git \
@@ -20,11 +21,12 @@ RUN apk add --no-cache \
     libffi-dev \
     openssl-dev
 
-# Actualizar pip a la última versión
-RUN pip3 install --upgrade pip
+# Opción 1: Usar --break-system-packages (para contenedores Docker es seguro)
+RUN pip3 install --upgrade pip --break-system-packages
+RUN pip3 install --no-cache-dir paho-mqtt --break-system-packages
 
-# Instalar paho-mqtt
-RUN pip3 install --no-cache-dir paho-mqtt
+# Opción 2: O usar el paquete de Alpine directamente (comentado)
+# RUN apk add --no-cache py3-paho-mqtt
 
 # Instalar bashio
 RUN mkdir -p /usr/lib/bashio && \
