@@ -33,7 +33,6 @@ BASE_TOPIC = "intelbras/alarm"
 alarm_client = AlarmClient(host=ALARM_IP, port=ALARM_PORT)
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 shutdown_event = threading.Event()
-# --- CAMBIO AQUÍ (1/3): Creamos el candado global ---
 alarm_lock = threading.Lock()
 
 # --- Funciones de MQTT ---
@@ -51,11 +50,14 @@ def on_message(client, userdata, msg):
     command = msg.payload.decode()
     logging.info(f"Comando MQTT recibido: '{command}'")
 
-    # --- CAMBIO AQUÍ (2/3): Usamos el candado para proteger esta sección ---
+    # --- INICIO: DEBUG DEL LOCK ---
+    logging.info("[on_message] -> Intentando tomar el candado...")
     with alarm_lock:
+        logging.info("[on_message] -> Candado ADQUIRIDO.")
         logging.info("Refrescando sesión con la central antes de enviar el comando...")
         if not connect_and_auth_alarm():
             logging.error("No se pudo ejecutar el comando porque la re-autenticación con la alarma falló.")
+            logging.info("[on_message] -> Trabajo terminado (con error). Liberando candado...")
             return
 
         try:
@@ -67,6 +69,9 @@ def on_message(client, userdata, msg):
                 alarm_client.disarm_system(0)
         except (CommunicationError, AuthError) as e:
             logging.error(f"Error de comunicación durante comando: {e}")
+    logging.info("[on_message] -> Trabajo terminado. Candado LIBERADO.")
+    # --- FIN: DEBUG DEL LOCK ---
+
 
 # --- Funciones de la Alarma ---
 def connect_and_auth_alarm():
@@ -86,8 +91,10 @@ def status_polling_thread():
     """Un hilo que pide el estado de la alarma periódicamente."""
     logging.info(f"Iniciando hilo de sondeo cada {POLLING_INTERVAL_MINUTES} minutos.")
     while not shutdown_event.is_set():
-        # --- CAMBIO AQUÍ (3/3): Usamos el candado también para proteger el sondeo ---
+        # --- INICIO: DEBUG DEL LOCK ---
+        logging.info("[Polling] -> Intentando tomar el candado...")
         with alarm_lock:
+            logging.info("[Polling] -> Candado ADQUIRIDO.")
             logging.info("Refrescando sesión para el sondeo periódico...")
             if not connect_and_auth_alarm():
                 logging.warning("Sondeo de estado omitido, no se pudo autenticar.")
@@ -96,6 +103,9 @@ def status_polling_thread():
                     logging.info("Sondeando estado de la central...")
                     status = alarm_client.status()
                     
+                    if 'zones' in status and status['zones']:
+                        logging.info(f"Estado de Zonas detectado: {status['zones']}")
+
                     # Publicar cada valor a su topic correspondiente
                     mqtt_client.publish(f"{BASE_TOPIC}/model", status.get("model"), retain=True)
                     mqtt_client.publish(f"{BASE_TOPIC}/version", status.get("version"), retain=True)
@@ -109,30 +119,26 @@ def status_polling_thread():
                 except (CommunicationError, AuthError) as e:
                     logging.warning(f"Error durante el sondeo de estado: {e}.")
         
+        logging.info("[Polling] -> Trabajo terminado. Candado LIBERADO.")
+        # --- FIN: DEBUG DEL LOCK ---
+
         # Esperar para el siguiente sondeo fuera del lock
         shutdown_event.wait(POLLING_INTERVAL_MINUTES * 60)
     logging.info("Hilo de sondeo de estado terminado.")
 
-# El resto del archivo (process_receptorip_output, handle_shutdown, if __name__ == "__main__") se mantiene igual
+# El resto del archivo se mantiene igual
 def process_receptorip_output(proc):
     """Lee la salida de 'receptorip', la loguea y publica eventos a MQTT."""
     for line in iter(proc.stdout.readline, ''):
         line = line.strip()
         if not line: continue
         
-        # Mostramos la línea original y completa para máxima claridad y robustez.
         logging.info(f"Evento de la Central (receptorip): {line}")
 
-        # Comprobamos los eventos en la línea original.
-        # La comprobación de pánico está aquí, como la primera condición.
         if "Panico" in line:
-            # --- LAS LÍNEAS QUE MENCIONAS ESTÁN AQUÍ, NO SE HAN QUITADO ---
             logging.info(f"¡Evento de pánico detectado: {line}!")
             mqtt_client.publish(f"{BASE_TOPIC}/panic", "on", retain=False)
-            # Creamos un hilo para que después de 30s lo vuelva a 'off'
             threading.Timer(30.0, lambda: mqtt_client.publish(f"{BASE_TOPIC}/panic", "off", retain=False)).start()
-            # --- FIN DE LAS LÍNEAS IMPORTANTES ---
-
         elif "Ativacao remota app" in line: 
             mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
         elif "Desativacao remota app" in line: 
