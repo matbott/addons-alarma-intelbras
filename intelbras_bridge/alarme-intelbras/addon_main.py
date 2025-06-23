@@ -37,7 +37,7 @@ is_alarm_authenticated = False
 
 def on_connect(client, userdata, flags, reason_code, properties):
     """Callback que se ejecuta cuando nos conectamos al broker MQTT (API v2)."""
-    if int(reason_code) == 0:
+    if reason_code == 0:
         logging.info(f"Conectado exitosamente al broker MQTT en {MQTT_BROKER}")
         client.subscribe(COMMAND_TOPIC)
         logging.info(f"Suscrito al topic de comandos: {COMMAND_TOPIC}")
