@@ -118,7 +118,7 @@ def status_polling_thread():
             
             mqtt_client.publish(f"{BASE_TOPIC}/tamper", "on" if status.get("tamper") else "off", retain=True)
             mqtt_client.publish(f"{BASE_TOPIC}/siren", "on" if status.get("siren") else "off", retain=True)
-            mqtt_client.publish(f"{BASE_TOPIC}/zones_firing", "on" if status.get("zonesFiring") else "off", retain=True)
+            mqtt_client.publish(f"{BASE_TOPIC}/zones_firing", "Disparada" if status.get("zonesFiring") else "Normal", retain=True)
             
             logging.info("Estado de la central publicado a MQTT.")
 
@@ -134,15 +134,18 @@ def status_polling_thread():
 def process_receptorip_output(proc):
     """Lee la salida de 'receptorip' y publica a MQTT."""
     for line in iter(proc.stdout.readline, ''):
-        line = line.strip()
-        if not line: continue
-        
-        logging.info(f"Evento de la Central (receptorip): {line}")
-
+        # ... (código existente) ...
         if "Ativacao remota app" in line:
             mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
         elif "Desativacao remota app" in line:
             mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
+        # --- AÑADE ESTE BLOQUE ---
+        elif "Panico" in line:
+            logging.info("¡Pánico silencioso detectado!")
+            mqtt_client.publish(f"{BASE_TOPIC}/panic", "on", retain=False) # Publicar 'on'
+            # Creamos un hilo para que después de 30s lo vuelva a 'off'
+            threading.Timer(30.0, lambda: mqtt_client.publish(f"{BASE_TOPIC}/panic", "off", retain=False)).start()
+        # --- FIN DEL BLOQUE AÑADIDO ---
     logging.warning("El proceso 'receptorip' ha terminado.")
 
 # --- Función Principal y Manejo de Cierre ---
