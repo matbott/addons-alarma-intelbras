@@ -31,6 +31,7 @@ export MQTT_PORT=$(bashio::config 'mqtt_port')
 export MQTT_USER=$(bashio::config 'mqtt_user')
 export MQTT_PASS=$(bashio::config 'mqtt_password')
 export POLLING_INTERVAL_MINUTES=$(bashio::config 'polling_interval_minutes' 5) # Usamos tu variable, con 5 min por defecto
+export ZONE_COUNT=$(bashio::config 'zone_count' 8) # 8 por defecto si no está definido
 
 # Configuración que solo usa este script
 PASSWORD_LENGTH=$(bashio::config 'password_length')
