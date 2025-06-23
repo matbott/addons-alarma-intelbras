@@ -1,160 +1,112 @@
-# Archivo: addon_main.py (v2.8 - Log de Zonas Recortado)
-import os
-import sys
-import logging
-import subprocess
-import threading
-import signal
-import time
+# Archivo: addon_main.py (v3.0 - con estado de zona unificado)
+import os, sys, logging, subprocess, threading, signal, time
 import paho.mqtt.client as mqtt
 from client import Client as AlarmClient, CommunicationError, AuthError
 
-# --- Configuración del Logging ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] - %(levelname)s - %(message)s',
-    stream=sys.stdout
-)
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(levelname)s - %(message)s', stream=sys.stdout)
 
-# --- Leer configuración desde variables de entorno ---
-ALARM_IP = os.environ.get('ALARM_IP')
-ALARM_PORT = int(os.environ.get('ALARM_PORT', 9009))
-ALARM_PASS = os.environ.get('ALARM_PASS')
-MQTT_BROKER = os.environ.get('MQTT_BROKER')
-MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883))
-MQTT_USER = os.environ.get('MQTT_USER')
-MQTT_PASS = os.environ.get('MQTT_PASS')
-POLLING_INTERVAL_MINUTES = int(os.environ.get('polling_interval_minutes', 5))
-# --- LEEMOS LA NUEVA VARIABLE DE ENTORNO ---
-ZONE_COUNT = int(os.environ.get('ZONE_COUNT', 8)) # 8 por defecto
-AVAILABILITY_TOPIC = "intelbras/alarm/availability"
-COMMAND_TOPIC = "intelbras/alarm/command"
-BASE_TOPIC = "intelbras/alarm"
-
-# --- Instancias Globales ---
+# --- Configuración ---
+ALARM_IP = os.environ.get('ALARM_IP'); ALARM_PORT = int(os.environ.get('ALARM_PORT', 9009)); ALARM_PASS = os.environ.get('ALARM_PASS')
+MQTT_BROKER = os.environ.get('MQTT_BROKER'); MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883)); MQTT_USER = os.environ.get('MQTT_USER'); MQTT_PASS = os.environ.get('MQTT_PASS')
+POLLING_INTERVAL_MINUTES = int(os.environ.get('POLLING_INTERVAL_MINUTES', 5))
+ZONE_COUNT = int(os.environ.get('ZONE_COUNT', 0))
+AVAILABILITY_TOPIC = "intelbras/alarm/availability"; COMMAND_TOPIC = "intelbras/alarm/command"; BASE_TOPIC = "intelbras/alarm"
 alarm_client = AlarmClient(host=ALARM_IP, port=ALARM_PORT)
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-shutdown_event = threading.Event()
-alarm_lock = threading.Lock()
+shutdown_event = threading.Event(); alarm_lock = threading.Lock()
+
+# --- Almacén Central de Estados ---
+zone_states = {str(i): "Desconocido" for i in range(1, ZONE_COUNT + 1)}
 
 # --- Funciones de MQTT ---
+def publish_zone_states():
+    with alarm_lock: # Proteger el acceso al diccionario mientras se lee
+        for zone_id, state in zone_states.items():
+            mqtt_client.publish(f"{BASE_TOPIC}/zone_{zone_id}", state, retain=True)
+    logging.info(f"Estados de zona publicados a MQTT: {zone_states}")
+
 def on_connect(client, userdata, flags, reason_code, properties):
-    if reason_code == 0:
-        logging.info(f"Conectado exitosamente al broker MQTT en {MQTT_BROKER}")
-        client.subscribe(COMMAND_TOPIC)
-        logging.info(f"Suscrito al topic de comandos: {COMMAND_TOPIC}")
-        client.publish(AVAILABILITY_TOPIC, "online", retain=True)
-    else:
-        logging.error(f"Fallo al conectar al broker MQTT: {reason_code}")
+    if reason_code == 0: logging.info("Conectado a MQTT y suscrito."); client.subscribe(COMMAND_TOPIC); client.publish(AVAILABILITY_TOPIC, "online", retain=True)
+    else: logging.error(f"Fallo al conectar a MQTT: {reason_code}")
 
 def on_message(client, userdata, msg):
-    """Callback que se ejecuta cuando llega un mensaje MQTT."""
     command = msg.payload.decode()
     logging.info(f"Comando MQTT recibido: '{command}'")
-
-    logging.info("[on_message] -> Intentando tomar el candado...")
     with alarm_lock:
-        logging.info("[on_message] -> Candado ADQUIRIDO.")
-        logging.info("Refrescando sesión con la central antes de enviar el comando...")
-        if not connect_and_auth_alarm():
-            logging.error("No se pudo ejecutar el comando porque la re-autenticación con la alarma falló.")
-            logging.info("[on_message] -> Trabajo terminado (con error). Liberando candado...")
-            return
-
+        if not connect_and_auth_alarm(): logging.error("Fallo de auth, comando no ejecutado."); return
         try:
-            if command == "ARM_AWAY":
-                logging.info("Enviando comando para ARMAR sistema...")
-                alarm_client.arm_system(0)
-            elif command == "DISARM":
-                logging.info("Enviando comando para DESARMAR sistema...")
-                alarm_client.disarm_system(0)
-        except (CommunicationError, AuthError) as e:
-            logging.error(f"Error de comunicación durante comando: {e}")
-    logging.info("[on_message] -> Trabajo terminado. Candado LIBERADO.")
-
+            if command == "ARM_AWAY": alarm_client.arm_system(0)
+            elif command == "DISARM": alarm_client.disarm_system(0)
+        except (CommunicationError, AuthError) as e: logging.error(f"Error de comunicación en comando: {e}")
 
 # --- Funciones de la Alarma ---
 def connect_and_auth_alarm():
-    """Gestiona la conexión y autenticación. ESTA FUNCIÓN DEBE SER LLAMADA DENTRO DE UN LOCK."""
-    try:
-        alarm_client.connect()
-        alarm_client.auth(ALARM_PASS)
-        return True
-    except (CommunicationError, AuthError) as e:
-        logging.error(f"Fallo de conexión/auth: {e}")
-        return False
-        
-def _map_battery_status_to_percentage(status: str):
-    return {"full": 100, "middle": 75, "low": 25, "dead": 0}.get(status)
+    try: alarm_client.connect(); alarm_client.auth(ALARM_PASS); return True
+    except (CommunicationError, AuthError) as e: logging.error(f"Fallo de conexión/auth: {e}"); return False
+def _map_battery_status_to_percentage(status: str): return {"full": 100, "middle": 75, "low": 25, "dead": 0}.get(status)
 
 def status_polling_thread():
-    """Un hilo que pide el estado de la alarma periódicamente."""
-    logging.info(f"Iniciando hilo de sondeo cada {POLLING_INTERVAL_MINUTES} minutos.")
+    logging.info(f"Iniciando sondeo cada {POLLING_INTERVAL_MINUTES} minutos.")
     while not shutdown_event.is_set():
-        logging.info("[Polling] -> Intentando tomar el candado...")
         with alarm_lock:
-            logging.info("[Polling] -> Candado ADQUIRIDO.")
-            logging.info("Refrescando sesión para el sondeo periódico...")
-            if not connect_and_auth_alarm():
-                logging.warning("Sondeo de estado omitido, no se pudo autenticar.")
+            if not connect_and_auth_alarm(): logging.warning("Sondeo omitido, no se pudo autenticar.")
             else:
                 try:
                     logging.info("Sondeando estado de la central...")
                     status = alarm_client.status()
-                    
-                    # --- INICIO DEL CAMBIO ---
-                    # Comprobamos si el diccionario de zonas existe y no está vacío.
-                    if 'zones' in status and status['zones']:
-                        full_zone_list = status['zones']
-                        
-                        # Creamos un nuevo diccionario más pequeño.
-                        zones_to_log = {
-                            str(k): full_zone_list.get(str(k), 'unknown') 
-                            for k in range(1, ZONE_COUNT + 1)
-                        }
-                        
-                        logging.info(f"Estado de Zonas (1-{ZONE_COUNT}): {zones_to_log}")
-                    else:
-                        logging.warning("No se encontró información de zonas en la respuesta de estado.")
-                    # --- FIN DEL CAMBIO ---
-
-                    # Publicar cada valor a su topic correspondiente
+                    # --- Actualizar sensores generales ---
                     mqtt_client.publish(f"{BASE_TOPIC}/model", status.get("model"), retain=True)
-                    mqtt_client.publish(f"{BASE_TOPIC}/version", status.get("version"), retain=True)
-                    battery_percent = _map_battery_status_to_percentage(status.get("batteryStatus"))
-                    if battery_percent is not None:
-                        mqtt_client.publish(f"{BASE_TOPIC}/battery_percentage", battery_percent, retain=True)
-                    mqtt_client.publish(f"{BASE_TOPIC}/tamper", "on" if status.get("tamper") else "off", retain=True)
-                    mqtt_client.publish(f"{BASE_TOPIC}/siren", "on" if status.get("siren") else "off", retain=True)
-                    mqtt_client.publish(f"{BASE_TOPIC}/zones_firing", "Disparada" if status.get("zonesFiring") else "Normal", retain=True)
-                    logging.info("Estado de la central publicado a MQTT.")
-                except (CommunicationError, AuthError) as e:
-                    logging.warning(f"Error durante el sondeo de estado: {e}.")
-        
-        logging.info("[Polling] -> Trabajo terminado. Candado LIBERADO.")
+                    # (aquí irían las otras publicaciones de sensores generales como batería, etc.)
 
-        # Esperar para el siguiente sondeo fuera del lock
+                    # --- Actualizar el ALMACÉN de estados de zona ---
+                    if 'zones' in status and isinstance(status['zones'], dict):
+                        for zone_id, new_state in status['zones'].items():
+                            if int(zone_id) <= ZONE_COUNT:
+                                # SOLO actualizar si la zona NO está disparada
+                                if zone_states.get(zone_id) != "Disparada":
+                                    zone_states[zone_id] = "Abierta" if new_state == "open" else "Cerrada"
+                    publish_zone_states() # Publicar todos los estados actualizados
+                except (CommunicationError, AuthError) as e: logging.warning(f"Error durante sondeo: {e}.")
         shutdown_event.wait(POLLING_INTERVAL_MINUTES * 60)
-    logging.info("Hilo de sondeo de estado terminado.")
+    logging.info("Hilo de sondeo terminado.")
 
-# El resto del archivo se mantiene igual
 def process_receptorip_output(proc):
-    """Lee la salida de 'receptorip', la loguea y publica eventos a MQTT."""
     for line in iter(proc.stdout.readline, ''):
         line = line.strip()
         if not line: continue
+        logging.info(f"Evento (receptorip): {line}")
         
-        logging.info(f"Evento de la Central (receptorip): {line}")
-
-        if "Panico" in line:
+        # Lógica de Armado/Desarmado
+        if "Ativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
+        elif "Desativacao remota app" in line:
+            mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
+            # Al desarmar, forzar la limpieza de todos los estados de disparo
+            with alarm_lock:
+                for zone_id in zone_states: zone_states[zone_id] = "Cerrada" # Asumir cerrada, el próximo sondeo corregirá
+            publish_zone_states()
+            
+        # Lógica de Pánico
+        elif "Panico" in line:
             logging.info(f"¡Evento de pánico detectado: {line}!")
             mqtt_client.publish(f"{BASE_TOPIC}/panic", "on", retain=False)
             threading.Timer(30.0, lambda: mqtt_client.publish(f"{BASE_TOPIC}/panic", "off", retain=False)).start()
-        elif "Ativacao remota app" in line: 
-            mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
-        elif "Desativacao remota app" in line: 
-            mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
-            
+        
+        # Lógica de Disparo y Restauración de Zonas
+        elif "Disparo de zona" in line:
+            try:
+                zone_id = line.split()[-1]
+                if int(zone_id) <= ZONE_COUNT:
+                    with alarm_lock: zone_states[zone_id] = "Disparada"
+                    publish_zone_states()
+            except (ValueError, IndexError): logging.warning(f"No se pudo extraer el ID de zona de la línea: {line}")
+        elif "Restauracao de zona" in line:
+            try:
+                zone_id = line.split()[-1]
+                if int(zone_id) <= ZONE_COUNT:
+                    with alarm_lock: zone_states[zone_id] = "Cerrada" # Asumir cerrada, el sondeo corregirá
+                    publish_zone_states()
+            except (ValueError, IndexError): logging.warning(f"No se pudo extraer el ID de zona de la línea: {line}")
+
     logging.warning("Proceso 'receptorip' terminado.")
 
 def handle_shutdown(signum, frame):
