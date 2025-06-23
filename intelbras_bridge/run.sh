@@ -165,15 +165,16 @@ listen_for_commands() {
     mosquitto_sub "${MQTT_OPTS[@]}" -t "intelbras/alarm/command" | while IFS= read -r command; do
         log "Comando MQTT recibido de Home Assistant: '$command'"
         
-        # Usamos 'case' para asegurarnos de que solo se ejecuten comandos conocidos.
         case "$command" in
             "ARM_AWAY"|"DISARM")
-                log "Verificando contraseña. Longitud: ${#ALARM_PASS}, Primer carácter: ${ALARM_PASS:0:1}"
                 log "Ejecutando script de Python para el comando '$command'..."
-                # Llamamos a nuestro nuevo script de Python pasándole los argumentos necesarios.
-                # Asegúrate de que python3 esté disponible en tu addon.
-                python3 /alarme-intelbras/control_alarma.py "$command" "$ALARM_IP" "$ALARM_PORT" "$ALARM_PASS"
-                log "La ejecución del script de Python ha finalizado."
+                
+                # --- AQUÍ ESTÁ LA SOLUCIÓN ---
+                # Añadimos "|| true" para que si el script de python falla,
+                # el bucle no se detenga.
+                python3 /alarme-intelbras/control_alarma.py "$command" "$ALARM_IP" "$ALARM_PORT" "$ALARM_PASS" || true
+                
+                log "La ejecución del script de Python ha finalizado (o ha fallado sin detener el listener)."
                 ;;
             *)
                 log "Comando desconocido o no soportado: '$command'"
