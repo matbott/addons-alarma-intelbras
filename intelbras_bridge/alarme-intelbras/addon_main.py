@@ -35,16 +35,16 @@ is_alarm_authenticated = False
 
 # --- Funciones de MQTT ---
 
-def on_connect(client, userdata, flags, rc):
-    """Callback que se ejecuta cuando nos conectamos al broker MQTT."""
-    if rc == 0:
+def on_connect(client, userdata, flags, reason_code, properties):
+    """Callback que se ejecuta cuando nos conectamos al broker MQTT (API v2)."""
+    if reason_code.rc == 0:
         logging.info(f"Conectado exitosamente al broker MQTT en {MQTT_BROKER}")
         client.subscribe(COMMAND_TOPIC)
         logging.info(f"Suscrito al topic de comandos: {COMMAND_TOPIC}")
         # Publicar que el addon está online
         client.publish(AVAILABILITY_TOPIC, "online", retain=True)
     else:
-        logging.error(f"Fallo al conectar al broker MQTT. Código de retorno: {rc}")
+        logging.error(f"Fallo al conectar al broker MQTT: {reason_code}")
 
 def on_message(client, userdata, msg):
     """Callback que se ejecuta cuando llega un mensaje MQTT."""
