@@ -138,7 +138,7 @@ publish_text_sensor_discovery "Versión Firmware" "version" "mdi:git"
 publish_numeric_sensor_discovery "Batería Alarma" "battery_percentage" "battery" "%" "mdi:battery"
 publish_binary_sensor_discovery "Tamper Alarma" "tamper" "tamper"
 publish_binary_sensor_discovery "Sirena" "siren" "sound"
-publish_binary_sensor_discovery "Zonas Disparadas" "zones_firing" "problem"
+publish_text_sensor_discovery "Estado Zonas" "zones_firing" "mdi:alarm-light"
 
 # --- GENERACIÓN DE CONFIG.CFG ---
 log "Generando config.cfg para receptorip..."
