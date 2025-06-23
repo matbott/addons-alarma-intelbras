@@ -1,4 +1,4 @@
-# Archivo: addon_main.py (v3.0 - con estado de zona unificado)
+# Archivo: addon_main.py (v3.1 - Corrección de Deadlock)
 import os, sys, logging, subprocess, threading, signal, time
 import paho.mqtt.client as mqtt
 from client import Client as AlarmClient, CommunicationError, AuthError
@@ -20,9 +20,9 @@ zone_states = {str(i): "Desconocido" for i in range(1, ZONE_COUNT + 1)}
 
 # --- Funciones de MQTT ---
 def publish_zone_states():
-    with alarm_lock: # Proteger el acceso al diccionario mientras se lee
-        for zone_id, state in zone_states.items():
-            mqtt_client.publish(f"{BASE_TOPIC}/zone_{zone_id}", state, retain=True)
+    # ESTA FUNCIÓN ASUME QUE EL CANDADO YA ESTÁ TOMADO POR QUIEN LA LLAMA
+    for zone_id, state in zone_states.items():
+        mqtt_client.publish(f"{BASE_TOPIC}/zone_{zone_id}", state, retain=True)
     logging.info(f"Estados de zona publicados a MQTT: {zone_states}")
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -60,12 +60,11 @@ def status_polling_thread():
 
                     # --- Actualizar el ALMACÉN de estados de zona ---
                     if 'zones' in status and isinstance(status['zones'], dict):
-                        for zone_id, new_state in status['zones'].items():
+                        for zone_id, new_state_str in status['zones'].items():
                             if int(zone_id) <= ZONE_COUNT:
-                                # SOLO actualizar si la zona NO está disparada
                                 if zone_states.get(zone_id) != "Disparada":
-                                    zone_states[zone_id] = "Abierta" if new_state == "open" else "Cerrada"
-                    publish_zone_states() # Publicar todos los estados actualizados
+                                    zone_states[zone_id] = "Abierta" if new_state_str == "open" else "Cerrada"
+                    publish_zone_states()
                 except (CommunicationError, AuthError) as e: logging.warning(f"Error durante sondeo: {e}.")
         shutdown_event.wait(POLLING_INTERVAL_MINUTES * 60)
     logging.info("Hilo de sondeo terminado.")
@@ -76,36 +75,30 @@ def process_receptorip_output(proc):
         if not line: continue
         logging.info(f"Evento (receptorip): {line}")
         
-        # Lógica de Armado/Desarmado
-        if "Ativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
-        elif "Desativacao remota app" in line:
-            mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
-            # Al desarmar, forzar la limpieza de todos los estados de disparo
-            with alarm_lock:
-                for zone_id in zone_states: zone_states[zone_id] = "Cerrada" # Asumir cerrada, el próximo sondeo corregirá
-            publish_zone_states()
-            
-        # Lógica de Pánico
-        elif "Panico" in line:
-            logging.info(f"¡Evento de pánico detectado: {line}!")
-            mqtt_client.publish(f"{BASE_TOPIC}/panic", "on", retain=False)
-            threading.Timer(30.0, lambda: mqtt_client.publish(f"{BASE_TOPIC}/panic", "off", retain=False)).start()
+        publish_required = False
+        with alarm_lock: # Tomar el candado antes de modificar el estado compartido
+            if "Ativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
+            elif "Desativacao remota app" in line:
+                mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
+                for zone_id in zone_states: zone_states[zone_id] = "Cerrada"
+                publish_required = True
+            elif "Panico" in line:
+                logging.info(f"¡Evento de pánico detectado: {line}!")
+                mqtt_client.publish(f"{BASE_TOPIC}/panic", "on", retain=False)
+                threading.Timer(30.0, lambda: mqtt_client.publish(f"{BASE_TOPIC}/panic", "off", retain=False)).start()
+            elif "Disparo de zona" in line:
+                try:
+                    zone_id = line.split()[-1]
+                    if int(zone_id) <= ZONE_COUNT: zone_states[zone_id] = "Disparada"; publish_required = True
+                except: logging.warning(f"No se pudo extraer ID de zona de: {line}")
+            elif "Restauracao de zona" in line:
+                try:
+                    zone_id = line.split()[-1]
+                    if int(zone_id) <= ZONE_COUNT: zone_states[zone_id] = "Cerrada"; publish_required = True
+                except: logging.warning(f"No se pudo extraer ID de zona de: {line}")
         
-        # Lógica de Disparo y Restauración de Zonas
-        elif "Disparo de zona" in line:
-            try:
-                zone_id = line.split()[-1]
-                if int(zone_id) <= ZONE_COUNT:
-                    with alarm_lock: zone_states[zone_id] = "Disparada"
-                    publish_zone_states()
-            except (ValueError, IndexError): logging.warning(f"No se pudo extraer el ID de zona de la línea: {line}")
-        elif "Restauracao de zona" in line:
-            try:
-                zone_id = line.split()[-1]
-                if int(zone_id) <= ZONE_COUNT:
-                    with alarm_lock: zone_states[zone_id] = "Cerrada" # Asumir cerrada, el sondeo corregirá
-                    publish_zone_states()
-            except (ValueError, IndexError): logging.warning(f"No se pudo extraer el ID de zona de la línea: {line}")
+        if publish_required:
+            publish_zone_states()
 
     logging.warning("Proceso 'receptorip' terminado.")
 
