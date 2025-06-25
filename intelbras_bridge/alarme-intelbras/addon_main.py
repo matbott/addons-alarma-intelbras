@@ -1,4 +1,4 @@
-# Archivo: addon_main.py (v3.1 - Corrección de Deadlock)
+# Archivo: addon_main.py (v3.2 - Estado Disparada y publicación completa)
 import os, sys, logging, subprocess, threading, signal, time
 import paho.mqtt.client as mqtt
 from client import Client as AlarmClient, CommunicationError, AuthError
@@ -43,7 +43,9 @@ def on_message(client, userdata, msg):
 def connect_and_auth_alarm():
     try: alarm_client.connect(); alarm_client.auth(ALARM_PASS); return True
     except (CommunicationError, AuthError) as e: logging.error(f"Fallo de conexión/auth: {e}"); return False
-def _map_battery_status_to_percentage(status: str): return {"full": 100, "middle": 75, "low": 25, "dead": 0}.get(status)
+
+def _map_battery_status_to_percentage(status: str) -> int:
+    return {"full": 100, "middle": 75, "low": 25, "dead": 0}.get(status, 0)
 
 def status_polling_thread():
     logging.info(f"Iniciando sondeo cada {POLLING_INTERVAL_MINUTES} minutos.")
@@ -54,14 +56,22 @@ def status_polling_thread():
                 try:
                     logging.info("Sondeando estado de la central...")
                     status = alarm_client.status()
-                    # --- Actualizar sensores generales ---
-                    mqtt_client.publish(f"{BASE_TOPIC}/model", status.get("model"), retain=True)
-                    # (aquí irían las otras publicaciones de sensores generales como batería, etc.)
+                    # --- INICIO MODIFICACIÓN: Actualizar sensores generales ---
+                    mqtt_client.publish(f"{BASE_TOPIC}/model", status.get("model", "Desconocido"), retain=True)
+                    mqtt_client.publish(f"{BASE_TOPIC}/version", status.get("version", "Desconocido"), retain=True)
+                    battery_level = _map_battery_status_to_percentage(status.get("batteryStatus"))
+                    mqtt_client.publish(f"{BASE_TOPIC}/battery_percentage", battery_level, retain=True)
+                    tamper_state = "on" if status.get("tamper", False) else "off"
+                    mqtt_client.publish(f"{BASE_TOPIC}/tamper", tamper_state, retain=True)
+                    logging.info(f"Publicados estados generales: Batería={battery_level}%, Tamper={tamper_state}")
+                    # --- FIN MODIFICACIÓN ---
 
                     # --- Actualizar el ALMACÉN de estados de zona ---
                     if 'zones' in status and isinstance(status['zones'], dict):
                         for zone_id, new_state_str in status['zones'].items():
                             if int(zone_id) <= ZONE_COUNT:
+                                # Solo actualizar si la zona no está actualmente marcada como 'Disparada'
+                                # Esto evita que el sondeo pise un evento de disparo en tiempo real
                                 if zone_states.get(zone_id) != "Disparada":
                                     zone_states[zone_id] = "Abierta" if new_state_str == "open" else "Cerrada"
                     publish_zone_states()
@@ -89,16 +99,25 @@ def process_receptorip_output(proc):
             elif "Disparo de zona" in line:
                 try:
                     zone_id = line.split()[-1]
-                    if int(zone_id) <= ZONE_COUNT: zone_states[zone_id] = "Disparada"; publish_required = True
+                    if int(zone_id) <= ZONE_COUNT:
+                        zone_states[zone_id] = "Disparada"
+                        # --- INICIO MODIFICACIÓN: Publicar estado 'Disparada' al panel ---
+                        mqtt_client.publish(f"{BASE_TOPIC}/state", "Disparada", retain=True)
+                        logging.info(f"Panel de alarma puesto en estado 'Disparada' debido a zona {zone_id}")
+                        # --- FIN MODIFICACIÓN ---
+                        publish_required = True
                 except: logging.warning(f"No se pudo extraer ID de zona de: {line}")
             elif "Restauracao de zona" in line:
                 try:
                     zone_id = line.split()[-1]
-                    if int(zone_id) <= ZONE_COUNT: zone_states[zone_id] = "Cerrada"; publish_required = True
+                    if int(zone_id) <= ZONE_COUNT:
+                        zone_states[zone_id] = "Cerrada"
+                        publish_required = True
                 except: logging.warning(f"No se pudo extraer ID de zona de: {line}")
         
         if publish_required:
-            publish_zone_states()
+            with alarm_lock: # Volver a tomar candado para publicar
+                publish_zone_states()
 
     logging.warning("Proceso 'receptorip' terminado.")
 
