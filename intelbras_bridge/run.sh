@@ -12,7 +12,7 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 # --- LECTURA DE CONFIGURACIÓN ---
-log "Iniciando Intelbras MQTT Bridge Add-on (v7.2 - Estado Disparada)"
+log "Iniciando Intelbras MQTT Bridge Add-on (v7.4 - Sensores Detallados y Pánico)"
 export ALARM_IP=$(bashio::config 'alarm_ip'); export ALARM_PORT=$(bashio::config 'alarm_port'); export ALARM_PASS=$(bashio::config 'alarm_password')
 export MQTT_BROKER=$(bashio::config 'mqtt_broker'); export MQTT_PORT=$(bashio::config 'mqtt_port'); export MQTT_USER=$(bashio::config 'mqtt_user'); export MQTT_PASS=$(bashio::config 'mqtt_password')
 export POLLING_INTERVAL_MINUTES=$(bashio::config 'polling_interval_minutes' 5)
@@ -27,9 +27,8 @@ publish_device_info() {
     echo "\"device\":{\"identifiers\":[\"${DEVICE_ID}\"],\"name\":\"Alarme Intelbras\",\"model\":\"AMT-8000\",\"manufacturer\":\"Intelbras\"}"
 }
 publish_binary_sensor_discovery() {
-    local name=$1; local uid=$2; local device_class=$3
-    local state_topic="intelbras/alarm/${uid}"
-    local payload='{'; payload+="\"name\":\"${name}\",\"state_topic\":\"${state_topic}\",\"unique_id\":\"${uid}\",\"device_class\":\"${device_class}\","; payload+="\"payload_on\":\"on\",\"payload_off\":\"off\",\"availability_topic\":\"${AVAILABILITY_TOPIC}\","; payload+="$(publish_device_info)"; payload+='}';
+    local name=$1; local uid=$2; local device_class=$3; local icon=${4:-}
+    local payload='{'; payload+="\"name\":\"${name}\",\"state_topic\":\"intelbras/alarm/${uid}\",\"unique_id\":\"${uid}\",\"device_class\":\"${device_class}\","; payload+="\"payload_on\":\"on\",\"payload_off\":\"off\",\"availability_topic\":\"${AVAILABILITY_TOPIC}\","; [[ -n "$icon" ]] && payload+="\"icon\":\"${icon}\","; payload+="$(publish_device_info)"; payload+='}';
     mosquitto_pub "${MQTT_OPTS[@]}" -r -t "${DISCOVERY_PREFIX}/binary_sensor/${DEVICE_ID}/${uid}/config" -m "${payload}"
 }
 publish_text_sensor_discovery() {
@@ -46,9 +45,15 @@ publish_numeric_sensor_discovery() {
 }
 publish_alarm_panel_discovery() {
     log "Publicando Painel de Alarme..."; local uid="${DEVICE_ID}_panel"; local command_topic="intelbras/alarm/command"; local state_topic="intelbras/alarm/state"
-    # --- MODIFICADO --- Se añade 'Disparada' que se mapea a 'triggered'
     local payload='{'; payload+="\"name\":\"Painel de Alarma Intelbras\",\"unique_id\":\"${uid}\",\"state_topic\":\"${state_topic}\","; payload+="\"command_topic\":\"${command_topic}\",\"availability_topic\":\"${AVAILABILITY_TOPIC}\","; payload+="\"value_template\":\"{% if value == 'Disparada' %}triggered{% elif value == 'Armada' %}armed_away{% else %}disarmed{% endif %}\","; payload+="\"payload_disarm\":\"DISARM\",\"payload_arm_away\":\"ARM_AWAY\",\"supported_features\":[\"arm_away\"],"; payload+="\"code_arm_required\":false,\"code_disarm_required\":false,"; payload+="$(publish_device_info)"; payload+='}';
     mosquitto_pub "${MQTT_OPTS[@]}" -r -t "${DISCOVERY_PREFIX}/alarm_control_panel/${DEVICE_ID}/config" -m "${payload}"
+}
+publish_button_discovery() {
+    local name=$1; local uid=$2; local icon=$3
+    local command_topic="intelbras/alarm/command"
+    local payload_press="PANIC"
+    local payload='{'; payload+="\"name\":\"${name}\",\"unique_id\":\"${uid}\",\"command_topic\":\"${command_topic}\","; payload+="\"payload_press\":\"${payload_press}\",\"icon\":\"${icon}\",\"availability_topic\":\"${AVAILABILITY_TOPIC}\","; payload+="$(publish_device_info)"; payload+='}';
+    mosquitto_pub "${MQTT_OPTS[@]}" -r -t "${DISCOVERY_PREFIX}/button/${DEVICE_ID}/${uid}/config" -m "${payload}"
 }
 
 # --- PUBLICACIÓN DE ENTIDADES ---
@@ -59,10 +64,13 @@ publish_text_sensor_discovery "Modelo Alarma" "model" "mdi:chip"
 publish_text_sensor_discovery "Versión Firmware" "version" "mdi:git"
 publish_numeric_sensor_discovery "Batería Alarma" "battery_percentage" "battery" "%" "mdi:battery"
 publish_binary_sensor_discovery "Tamper Alarma" "tamper" "tamper"
-# --- ELIMINADO --- No crearemos más los sensores de sirena y de zonas disparadas
-#publish_binary_sensor_discovery "Sirena" "siren" "sound"
-#publish_text_sensor_discovery "Estado Zonas Disparadas" "zones_firing" "mdi:alarm-light"
 publish_binary_sensor_discovery "Pánico Silencioso" "panic" "safety"
+
+# --- INICIO: NUEVAS ENTIDADES ---
+publish_button_discovery "Pánico Audible" "panic_button" "mdi:alert-decagram"
+publish_binary_sensor_discovery "Alimentación AC" "ac_power" "power-plug"
+publish_binary_sensor_discovery "Batería del Sistema" "system_battery" "battery-alert"
+# --- FIN: NUEVAS ENTIDADES ---
 
 log "Publicando sensores de zona de texto individuales..."
 for i in $(seq 1 "$ZONE_COUNT"); do
