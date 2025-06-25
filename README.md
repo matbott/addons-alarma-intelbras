@@ -59,3 +59,6 @@ El incumplimiento de estas reglas puede causar que la comunicación con la centr
 Este proyecto no sería posible sin el increíble trabajo de ingeniería inversa realizado por **elvis-epx** en su proyecto original. Gran parte de la comunicación directa con la central se basa en sus hallazgos.
 
 * **Proyecto Original:** [receptorip-intelbras en GitHub](https://github.com/elvis-epx/alarme-intelbras)
+
+Tambien el agradecimiento a https://github.com/merencia
+* https://github.com/merencia/amt8000-hass-integration
