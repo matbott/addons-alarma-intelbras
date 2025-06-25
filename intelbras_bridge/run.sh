@@ -12,7 +12,7 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 # --- LECTURA DE CONFIGURACIÓN ---
-log "Iniciando Intelbras MQTT Bridge Add-on (v7.4 - Sensores Detallados y Pánico)"
+log "Iniciando Intelbras MQTT Bridge Add-on (v7.5 - Corrección Device Class)"
 export ALARM_IP=$(bashio::config 'alarm_ip'); export ALARM_PORT=$(bashio::config 'alarm_port'); export ALARM_PASS=$(bashio::config 'alarm_password')
 export MQTT_BROKER=$(bashio::config 'mqtt_broker'); export MQTT_PORT=$(bashio::config 'mqtt_port'); export MQTT_USER=$(bashio::config 'mqtt_user'); export MQTT_PASS=$(bashio::config 'mqtt_password')
 export POLLING_INTERVAL_MINUTES=$(bashio::config 'polling_interval_minutes' 5)
@@ -65,12 +65,12 @@ publish_text_sensor_discovery "Versión Firmware" "version" "mdi:git"
 publish_numeric_sensor_discovery "Batería Alarma" "battery_percentage" "battery" "%" "mdi:battery"
 publish_binary_sensor_discovery "Tamper Alarma" "tamper" "tamper"
 publish_binary_sensor_discovery "Pánico Silencioso" "panic" "safety"
-
-# --- INICIO: NUEVAS ENTIDADES ---
 publish_button_discovery "Pánico Audible" "panic_button" "mdi:alert-decagram"
-publish_binary_sensor_discovery "Alimentación AC" "ac_power" "power-plug"
-publish_binary_sensor_discovery "Batería del Sistema" "system_battery" "battery-alert"
-# --- FIN: NUEVAS ENTIDADES ---
+
+# --- INICIO: LÍNEAS CORREGIDAS ---
+publish_binary_sensor_discovery "Alimentación AC" "ac_power" "power"
+publish_binary_sensor_discovery "Batería del Sistema" "system_battery" "battery"
+# --- FIN: LÍNEAS CORREGIDAS ---
 
 log "Publicando sensores de zona de texto individuales..."
 for i in $(seq 1 "$ZONE_COUNT"); do
