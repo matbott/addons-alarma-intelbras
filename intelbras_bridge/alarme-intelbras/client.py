@@ -356,8 +356,10 @@ class Client:
         LOGGER.debug("Sending arm command: %s", payload.hex())
         return_data = self._send_command_and_receive_response(payload)
         
-        if len(return_data) > 9 and return_data[9] == 0x91:
-            LOGGER.info("System armed successfully.")
+        if len(return_data) > 9 and return_data[9] in [0x91, 0x99]:
+        # Determinamos qué tipo de armado fue para un log más claro
+            arm_type = "con bypass de zonas" if return_data[9] == 0x99 else "normal"
+            LOGGER.info(f"Sistema armado exitosamente ({arm_type}).")
             return 'armed'
             
         LOGGER.warning("Arm command failed. Response: %s", return_data.hex())
