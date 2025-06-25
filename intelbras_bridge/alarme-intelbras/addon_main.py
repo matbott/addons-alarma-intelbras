@@ -1,4 +1,4 @@
-# Archivo: addon_main.py (v3.2 - Estado Disparada y publicación completa)
+# Archivo: addon_main.py (v3.4 - Sensores detallados y Pánico)
 import os, sys, logging, subprocess, threading, signal, time
 import paho.mqtt.client as mqtt
 from client import Client as AlarmClient, CommunicationError, AuthError
@@ -20,14 +20,21 @@ zone_states = {str(i): "Desconocido" for i in range(1, ZONE_COUNT + 1)}
 
 # --- Funciones de MQTT ---
 def publish_zone_states():
-    # ESTA FUNCIÓN ASUME QUE EL CANDADO YA ESTÁ TOMADO POR QUIEN LA LLAMA
     for zone_id, state in zone_states.items():
         mqtt_client.publish(f"{BASE_TOPIC}/zone_{zone_id}", state, retain=True)
     logging.info(f"Estados de zona publicados a MQTT: {zone_states}")
 
 def on_connect(client, userdata, flags, reason_code, properties):
-    if reason_code == 0: logging.info("Conectado a MQTT y suscrito."); client.subscribe(COMMAND_TOPIC); client.publish(AVAILABILITY_TOPIC, "online", retain=True)
-    else: logging.error(f"Fallo al conectar a MQTT: {reason_code}")
+    if reason_code == 0:
+        logging.info("Conectado a MQTT y suscrito.")
+        client.subscribe(COMMAND_TOPIC)
+        client.publish(AVAILABILITY_TOPIC, "online", retain=True)
+        # --- INICIO: Publicar estado inicial de nuevos sensores ---
+        client.publish(f"{BASE_TOPIC}/ac_power", "on", retain=True)
+        client.publish(f"{BASE_TOPIC}/system_battery", "on", retain=True)
+        # --- FIN: Publicar estado inicial ---
+    else:
+        logging.error(f"Fallo al conectar a MQTT: {reason_code}")
 
 def on_message(client, userdata, msg):
     command = msg.payload.decode()
@@ -35,8 +42,13 @@ def on_message(client, userdata, msg):
     with alarm_lock:
         if not connect_and_auth_alarm(): logging.error("Fallo de auth, comando no ejecutado."); return
         try:
-            if command == "ARM_AWAY": alarm_client.arm_system(0)
-            elif command == "DISARM": alarm_client.disarm_system(0)
+            if command == "ARM_AWAY":
+                alarm_client.arm_system(0)
+            elif command == "DISARM":
+                alarm_client.disarm_system(0)
+            elif command == "PANIC":
+                logging.info("¡Activando pánico audible desde Home Assistant!")
+                alarm_client.panic(1) # El tipo 1 suele ser pánico audible
         except (CommunicationError, AuthError) as e: logging.error(f"Error de comunicación en comando: {e}")
 
 # --- Funciones de la Alarma ---
@@ -56,7 +68,6 @@ def status_polling_thread():
                 try:
                     logging.info("Sondeando estado de la central...")
                     status = alarm_client.status()
-                    # --- INICIO MODIFICACIÓN: Actualizar sensores generales ---
                     mqtt_client.publish(f"{BASE_TOPIC}/model", status.get("model", "Desconocido"), retain=True)
                     mqtt_client.publish(f"{BASE_TOPIC}/version", status.get("version", "Desconocido"), retain=True)
                     battery_level = _map_battery_status_to_percentage(status.get("batteryStatus"))
@@ -64,14 +75,9 @@ def status_polling_thread():
                     tamper_state = "on" if status.get("tamper", False) else "off"
                     mqtt_client.publish(f"{BASE_TOPIC}/tamper", tamper_state, retain=True)
                     logging.info(f"Publicados estados generales: Batería={battery_level}%, Tamper={tamper_state}")
-                    # --- FIN MODIFICACIÓN ---
-
-                    # --- Actualizar el ALMACÉN de estados de zona ---
                     if 'zones' in status and isinstance(status['zones'], dict):
                         for zone_id, new_state_str in status['zones'].items():
                             if int(zone_id) <= ZONE_COUNT:
-                                # Solo actualizar si la zona no está actualmente marcada como 'Disparada'
-                                # Esto evita que el sondeo pise un evento de disparo en tiempo real
                                 if zone_states.get(zone_id) != "Disparada":
                                     zone_states[zone_id] = "Abierta" if new_state_str == "open" else "Cerrada"
                     publish_zone_states()
@@ -84,9 +90,8 @@ def process_receptorip_output(proc):
         line = line.strip()
         if not line: continue
         logging.info(f"Evento (receptorip): {line}")
-        
         publish_required = False
-        with alarm_lock: # Tomar el candado antes de modificar el estado compartido
+        with alarm_lock:
             if "Ativacao remota app" in line: mqtt_client.publish(f"{BASE_TOPIC}/state", "Armada", retain=True)
             elif "Desativacao remota app" in line:
                 mqtt_client.publish(f"{BASE_TOPIC}/state", "Desarmada", retain=True)
@@ -96,15 +101,23 @@ def process_receptorip_output(proc):
                 logging.info(f"¡Evento de pánico detectado: {line}!")
                 mqtt_client.publish(f"{BASE_TOPIC}/panic", "on", retain=False)
                 threading.Timer(30.0, lambda: mqtt_client.publish(f"{BASE_TOPIC}/panic", "off", retain=False)).start()
+            # --- INICIO: Lógica para nuevos sensores de estado ---
+            elif "Falta de energia AC" in line:
+                mqtt_client.publish(f"{BASE_TOPIC}/ac_power", "off", retain=True)
+            elif "Retorno de energia AC" in line:
+                mqtt_client.publish(f"{BASE_TOPIC}/ac_power", "on", retain=True)
+            elif "Bateria do sistema baixa" in line:
+                mqtt_client.publish(f"{BASE_TOPIC}/system_battery", "off", retain=True)
+            elif "Recuperacao bateria do sistema baixa" in line:
+                mqtt_client.publish(f"{BASE_TOPIC}/system_battery", "on", retain=True)
+            # --- FIN: Lógica para nuevos sensores ---
             elif "Disparo de zona" in line:
                 try:
                     zone_id = line.split()[-1]
                     if int(zone_id) <= ZONE_COUNT:
                         zone_states[zone_id] = "Disparada"
-                        # --- INICIO MODIFICACIÓN: Publicar estado 'Disparada' al panel ---
                         mqtt_client.publish(f"{BASE_TOPIC}/state", "Disparada", retain=True)
                         logging.info(f"Panel de alarma puesto en estado 'Disparada' debido a zona {zone_id}")
-                        # --- FIN MODIFICACIÓN ---
                         publish_required = True
                 except: logging.warning(f"No se pudo extraer ID de zona de: {line}")
             elif "Restauracao de zona" in line:
@@ -114,11 +127,9 @@ def process_receptorip_output(proc):
                         zone_states[zone_id] = "Cerrada"
                         publish_required = True
                 except: logging.warning(f"No se pudo extraer ID de zona de: {line}")
-        
         if publish_required:
-            with alarm_lock: # Volver a tomar candado para publicar
+            with alarm_lock:
                 publish_zone_states()
-
     logging.warning("Proceso 'receptorip' terminado.")
 
 def handle_shutdown(signum, frame):
