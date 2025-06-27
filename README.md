@@ -1,6 +1,6 @@
 # Puente MQTT para Centrales de Alarma Intelbras (Add-on de Home Assistant)
 
-Este proyecto es un Add-on para Home Assistant que actúa como un puente (bridge) entre las centrales de alarma Intelbras (como la serie AMT) y un bróker MQTT. Permite monitorear el estado completo de la alarma y controlarla (armar/desarmar) directamente desde la interfaz de Home Assistant.
+Este proyecto es un Add-on para Home Assistant que actúa como un puente (bridge) entre las centrales de alarma Intelbras (como la serie AMT) y un bróker MQTT. Permite monitorear el estado completo de la alarma y controlarla (armar/desarmar, panico) directamente desde la interfaz de Home Assistant.
 
 ## Características Principales
 
