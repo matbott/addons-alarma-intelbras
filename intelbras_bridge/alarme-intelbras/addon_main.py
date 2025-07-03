@@ -107,9 +107,9 @@ def process_receptorip_output(proc):
             elif "Retorno de energia AC" in line:
                 mqtt_client.publish(f"{BASE_TOPIC}/ac_power", "on", retain=True)
             elif "Bateria do sistema baixa" in line:
-                mqtt_client.publish(f"{BASE_TOPIC}/system_battery", "off", retain=True)
-            elif "Recuperacao bateria do sistema baixa" in line:
                 mqtt_client.publish(f"{BASE_TOPIC}/system_battery", "on", retain=True)
+            elif "Recuperacao bateria do sistema baixa" in line:
+                mqtt_client.publish(f"{BASE_TOPIC}/system_battery", "off", retain=True)
             # --- FIN: Lógica para nuevos sensores ---
             elif "Disparo de zona" in line:
                 try:
